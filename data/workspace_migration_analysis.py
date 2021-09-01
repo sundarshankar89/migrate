@@ -170,31 +170,41 @@ class migrateclient(dbclient):
     def get_num_groups(self):
       groups = self.get('/preview/scim/v2/Groups').get('Resources', [])
       return len(groups)
+
+    def get_num_notebooks_path(self,path,second_level=False):
+        total_nbs = 0
+        second_level_dirs = []
+        ls = self.get('/workspace/list', {'path' : path}).get('objects', [])
+        nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls))
+        total_nbs += len(nbs)
+        dirs = list(filter(lambda x: x.get('object_type', None) == 'DIRECTORY', ls))
+        for p in dirs:
+            dir_path = p.get('path')
+            ls_dir = self.get('/workspace/list', {'path' : dir_path}).get('objects', [])
+            dir_nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls_dir))
+            second_level_dirs.extend(filter(lambda x: x.get('object_type', None) == 'DIRECTORY', ls_dir))
+            total_nbs += len(dir_nbs)
+        # search 2 levels deep only to get an approximate notebook count
+        if second_level:
+            for p in second_level_dirs:
+                dir_path = p.get('path')
+                ls_dir = self.get('/workspace/list', {'path' : dir_path}).get('objects', [])
+                dir_nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls_dir))
+                total_nbs += len(dir_nbs)
+        return total_nbs
+
     
     def get_num_notebooks(self, second_level=False):
       users = self.get('/preview/scim/v2/Users').get('Resources', [])
-      total_nbs = 0 
-      second_level_dirs = []
+      total_nbs = 0
+      total_nbs_shared = 0
       for user in users:
         path = '/Users/' + user['userName']
-        ls = self.get('/workspace/list', {'path' : path}).get('objects', [])
-        nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls))
-        total_nbs += len(nbs) 
-        dirs = list(filter(lambda x: x.get('object_type', None) == 'DIRECTORY', ls))
-        for p in dirs:
-          dir_path = p.get('path')
-          ls_dir = self.get('/workspace/list', {'path' : dir_path}).get('objects', [])
-          dir_nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls_dir))
-          second_level_dirs.extend(filter(lambda x: x.get('object_type', None) == 'DIRECTORY', ls_dir))
-          total_nbs += len(dir_nbs) 
-      # search 2 levels deep only to get an approximate notebook count
-      if second_level:
-        for p in second_level_dirs:
-          dir_path = p.get('path')
-          ls_dir = self.get('/workspace/list', {'path' : dir_path}).get('objects', [])
-          dir_nbs = list(filter(lambda x: x.get('object_type', None) == 'NOTEBOOK', ls_dir))
-          total_nbs += len(dir_nbs) 
-      return total_nbs 
+        total_nbs = total_nbs + self.get_num_notebooks_path(path,second_level)
+      #Capturing all Shared
+      total_nbs_shared = total_nbs_shared + self.get_num_notebooks_path('/Shared/',second_level)
+
+      return total_nbs + total_nbs_shared
         
     def get_num_databases(self):
       dbs = spark.catalog.listDatabases()
