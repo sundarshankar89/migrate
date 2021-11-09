@@ -51,7 +51,6 @@ class WorkspaceClient(ScimClient):
         :param nb_full_path: full destination path, e.g. /Users/foo@db.com/bar.dbc . Includes extension / type
         :return: return the full input args to upload to the destination system
         """
-        is_source_format = self.is_source_file_format()
         fp = open(full_local_path, "rb")
         (nb_path_dest, nb_type) = os.path.splitext(nb_full_path)
         in_args = {
@@ -59,7 +58,11 @@ class WorkspaceClient(ScimClient):
             "path": nb_path_dest,
             "format": self.get_file_format()
         }
-        if is_source_format:
+        if self.is_source_file_format():
+            if self.is_overwrite_notebooks():
+                in_args['overwrite'] = True
+            if nb_type == '.dbc':
+                raise ValueError('Export is in DBC default format. Must export as SOURCE')
             in_args['language'] = self.get_language(nb_type)
             in_args['object_type'] = 'NOTEBOOK'
         return in_args
@@ -164,6 +167,10 @@ class WorkspaceClient(ScimClient):
         print(f"Total notebooks downloaded: {num_of_nbs_dl}")
         if num_of_nbs != num_of_nbs_dl:
             print(f"Notebooks logged != downloaded. Check the failed download file at: {user_export_dir}")
+        print(f"Exporting the notebook permissions for {username}")
+        self.log_acl_to_file('notebooks', 'user_workspace.log', 'acl_notebooks.log', 'failed_acl_notebooks.log')
+        print(f"Exporting the directories permissions for {username}")
+        self.log_acl_to_file('directories', 'user_dirs.log', 'acl_directories.log', 'failed_acl_directories.log')
         # reset the original export dir for other calls to this method using the same client
         self.set_export_dir(original_export_dir)
 
@@ -208,6 +215,19 @@ class WorkspaceClient(ScimClient):
                 resp_upload = self.post(WS_IMPORT, nb_input_args)
                 if self.is_verbose():
                     print(resp_upload)
+        # import the user's workspace ACLs
+        notebook_acl_logs = user_import_dir + f'/{username}/acl_notebooks.log'
+        if os.path.exists(notebook_acl_logs):
+            print(f"Importing the notebook acls for {username}")
+            with open(notebook_acl_logs) as nb_acls_fp:
+                for nb_acl_str in nb_acls_fp:
+                    self.apply_acl_on_object(nb_acl_str)
+        dir_acl_logs = user_import_dir + f'/{username}/acl_directories.log'
+        if os.path.exists(dir_acl_logs):
+            print(f"Importing the directory acls for {username}")
+            with open(dir_acl_logs) as dir_acls_fp:
+                for dir_acl_str in dir_acls_fp:
+                    self.apply_acl_on_object(dir_acl_str)
         self.set_export_dir(original_export_dir)
 
     def download_notebooks(self, ws_log_file='user_workspace.log', ws_dir='artifacts/'):
@@ -225,7 +245,7 @@ class WorkspaceClient(ScimClient):
             # notebook log metadata file now contains object_id to help w/ ACL exports
             # pull the path from the data to download the individual notebook contents
             for notebook_data in fp:
-                notebook_path = json.loads(notebook_data).get('path', None).rstrip()
+                notebook_path = json.loads(notebook_data).get('path', None).rstrip('\n')
                 dl_resp = self.download_notebook_helper(notebook_path, export_dir=self.get_export_dir() + ws_dir)
                 if 'error_code' not in dl_resp:
                     num_notebooks += 1
@@ -243,8 +263,8 @@ class WorkspaceClient(ScimClient):
             print("Downloading: {0}".format(get_args['path']))
         resp = self.get(WS_EXPORT, get_args)
         with open(self.get_export_dir() + 'failed_notebooks.log', 'a') as err_log:
-            if resp.get('error_code', None):
-                err_msg = {'error_code': resp.get('error_code'), 'path': notebook_path}
+            if resp.get('error', None):
+                err_msg = {'error': resp.get('error'), 'path': notebook_path}
                 err_log.write(json.dumps(err_msg) + '\n')
                 return err_msg
         nb_path = os.path.dirname(notebook_path)
@@ -359,6 +379,9 @@ class WorkspaceClient(ScimClient):
         :param failed_log_filename: failed acl logs for resources, should be empty
         """
         read_log_path = self.get_export_dir() + read_log_filename
+        if not os.path.exists(read_log_path):
+            print(f"No log exists for {read_log_path}. Skipping ACL export ...")
+            return
         write_log_path = self.get_export_dir() + write_log_filename
         failed_log_path = self.get_export_dir() + failed_log_filename
         with open(read_log_path, 'r') as read_fp, open(write_log_path, 'w') as write_fp, \

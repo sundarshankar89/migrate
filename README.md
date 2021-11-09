@@ -1,8 +1,8 @@
 # Databricks Migration Tool
 
 This is a migration package to log all Databricks resources for backup and/or migrating to another Databricks workspace.
-Migration allows a Databricks organization to move resources between Databricks Workspaces, 
-to move between different cloud providers, or to move to different regions / accounts.  
+Migration allows a Databricks organization to move resources between Databricks Workspaces,
+to move between different cloud providers, or to move to different regions / accounts.
 
 Packaged is based on python 3.6 and DBR 6.x and 7.x releases.  
 
@@ -11,6 +11,33 @@ Support for Windows is work in progress to update all paths to use pathlib resol
 
 This package uses credentials from the 
 [Databricks CLI](https://docs.databricks.com/user-guide/dev-tools/databricks-cli.html)  
+
+**Pre-Requisites**
+To use this migration tool, you'll need:  
+* An environment running linux with python, pip, git, and the databricks CLI installed.
+* Admin access to both the old and new databricks accounts.
+
+Generate Access Tokens for both the old and new databricks accounts
+Login to your Databricks account and navigate to "user settings"
+Click on "Access Tokens"
+Click on "Generate New Token"
+
+Be sure to keep a file with the url for both the old and new databricks account
+Add the old and new token and the old and new Instance ID if applicable.  You'll need easy access to all of these things when running the migration tool.
+
+In order to run the migration tool from your linux shell, Create a profile for the old workspace by typing:
+"databricks configure --token --profile oldWS"  in this case oldWS is the profile name you'll refer to for running the migration tool export_db.py file within the old databricks account.
+
+When you use the databricks cli configure command, you'll be prompted for 2 things.  The first is:
+Databricks Host (should begin with https://):
+When this happens, enter the old databricks workspace URL that you captured in your file above.
+The second is:
+Token:
+When this happens, paste in the token you generated for the old databricks account.
+
+Repeat the steps above for the new databricks account and change the "oldWS" profile name to something like "newWS" in order to keep track of which account you're exporting FROM and which account you're inporting TO.
+
+To use the migration tool see the details below to start running the tool in the order recommended to properly migrate files.
 
 Support Matrix for Import and Export Operations:
 
@@ -34,7 +61,7 @@ Support Matrix for Import and Export Operations:
   * Azure DBFS migrations is work in progress. 
 
 **Note:** MLFlow objects cannot be exported / imported with this tool.
-For more details, please look [here](https://github.com/amesar/mlflow-tools/)
+For more details, please look [here](https://github.com/amesar/mlflow-export-import/)
 
 ## Workspace Analysis
 Import this [notebook](data/workspace_migration_analysis.py) to do an analysis of the number of objects within the 
@@ -79,7 +106,7 @@ user and groups.
 to export instance profiles that are tied to user/group entitlements.   
 For AWS users, this section will log the instance profiles used for IAM access to resources. 
 
-To export users / groups, use the following:
+To export users / groups, use the following: (The profile name DEMO will be replaced with the profile you defined for your old databricks account)
 ```bash
 python export_db.py --profile DEMO --users
 ```
@@ -107,6 +134,16 @@ This will export the following:
 ```bash
 python import_db.py --profile NEW_DEMO --clusters
 ```
+If you experience errors when you try to import the clusters, it may be that you need to modify the clusters file from the logs directory to include the new instance profile if it's not the same as the one in the old databricks account.
+
+To make changes to a cluster name to match the new databricks account you must edit the clusters log file after export.  You do this by looking at the clusters file and identifying the old cluster instance profile which will include the old account number and the name of the instance profile.
+OLD profile text from an AWS Databricks account:
+arn:aws:iam::111111111111:instance-profile/profileName
+The account number (111111111111) and profileName need to be found and replaced to migrate to the new account which may have a different account number and instance profile.
+
+To modify the clusters.log file run this: 
+sed -i 's/old-text/new-text/g' input.txt
+https://unix.stackexchange.com/questions/32907/what-characters-do-i-need-to-escape-when-using-sed-in-a-sh-script
 
 ### Notebooks
 This section uses the [Workspace API](https://docs.databricks.com/dev-tools/api/latest/workspace.html)
@@ -143,6 +180,7 @@ The corollary is the `--import-home` option:
 ```bash
 python import_db.py --profile NEW_DEMO --import-home example@foobar.com
 ```
+This will include notebooks, directories, and their corresponding ACLs. 
 
 ### Jobs
 This section uses the [Jobs API](https://docs.databricks.com/dev-tools/api/latest/jobs.html)  
@@ -194,9 +232,13 @@ python export_db.py --profile DEMO --metastore --cluster-name "Test"
 python export_db.py --profile DEMO --metastore --cluster-name "Test" --database "my_db"
 ```
 
+# import all metastore entries
+```bash
+python import_db.py --profile newDEMO --metastore
+```
 To find legacy Hive tables that need to be repaired after a successful import, run the following:
 ```
-python import_db.py --profile DST --get-repair-log
+python import_db.py --profile newDEMO --get-repair-log
 ```
 Once completed, it will upload a log to the destination location. 
 Use this [repair notebook](data/repair_tables_for_migration.py) to import into the destination environment to repair 
@@ -204,7 +246,7 @@ all tables.
 
 ### Table ACLs
 The Table ACLs component includes all objects to which access is controlled using
-`DENNY` and `GRANT` SQL statements:
+`DENY` and `GRANT` SQL statements:
 - Catalog: included if all databases are exported
   - Database: included
     - Table: included
@@ -243,25 +285,26 @@ This does **not** include IAM roles as those likely change while moving across w
 
 ```bash
 # reset the export directory and export a set of groups
-python export_db.py --reset-export && python export_db.py --profile SRC --export-groups 'groupA,groupB'
+python export_db.py --reset-export && python export_db.py --profile DEMO --export-groups 'groupA,groupB'
 
 # import the groups that were exported
-python import_db.py --profile DST --import-groups
+python import_db.py --profile newDEMO --import-groups
 ```
 
 ### Export / Import Top Level Notebooks
 This will export all notebooks that are not a part of the `/Users/` directories to help migrate notebooks that are 
-outside of personal workspace directories. 
+outside of personal workspace directories.  Usually, these will be notebooks in the '/Shared/' directory.
+
 ```bash
 # reset the export directory and export the top level directories / notebooks
-python export_db.py --reset-export && python export_db.py --profile SRC --workspace-top-level-only
+python export_db.py --profile DEMO --reset-export && python export_db.py --profile DEMO --workspace-top-level-only
 # if ACLs are enabled, export the ACLs as well
-python export_db.py --profile SRC --workspace-acls
+python export_db.py --profile DEMO --workspace-acls
 
 # import the groups that were exported
-python import_db.py --profile DST --workspace-top-level
+python import_db.py --profile newDEMO --workspace-top-level
 # apply acls if needed 
-python import_db.py --profile DST --workspace-acls
+python import_db.py --profile newDEMO --workspace-acls
 ```
 
 ### Export / Import of Secrets
@@ -269,9 +312,9 @@ This will export secret to allow migration of secrets to a new workspace.
 There is a limit to the size of the secret value which will print an error if this fails.  
 ```bash
 # to export you must use a cluster
-python export_db.py --profile SRC --secrets --cluster-name "my_cluster"
+python export_db.py --profile DEMO --secrets --cluster-name "my_cluster"
 # to import, you do not need a cluster
-python import_db.py --profile DST --secrets
+python import_db.py --profile newDEMO --secrets
 ```
 
 #### Export Help Text

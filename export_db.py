@@ -4,6 +4,7 @@ from datetime import timedelta, datetime
 import os
 import shutil
 
+
 # python 3.6
 def main():
     # define a parser to identify what component to import / export
@@ -91,6 +92,7 @@ def main():
             lib_c = LibraryClient(client_config)
             start = timer()
             lib_c.log_library_details()
+            lib_c.log_cluster_libs()
             end = timer()
             print("Complete Library Download Time: " + str(timedelta(seconds=end - start)))
 

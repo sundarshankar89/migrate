@@ -47,6 +47,10 @@ def main():
         print("Import on {0}".format(url))
         ws_c = WorkspaceClient(client_config)
         start = timer()
+        if ws_c.is_overwrite_notebooks():
+            # if OVERWRITE is configured, check that the SOURCE format option is used. Otherwise fail
+            if not ws_c.is_source_file_format():
+                raise ValueError('Overwrite notebooks only supports the SOURCE format. See Rest API docs for details')
         # log notebooks and libraries
         ws_c.import_all_workspace_items(archive_missing=args.archive_missing,
                                         restart_from_last=args.restart_from_checkpoint)
@@ -58,6 +62,10 @@ def main():
         print("Import on {0}".format(url))
         ws_c = WorkspaceClient(client_config)
         start = timer()
+        if ws_c.is_overwrite_notebooks():
+            # if OVERWRITE is configured, check that the SOURCE format option is used. Otherwise fail
+            if not ws_c.is_source_file_format():
+                raise ValueError('Overwrite notebooks only supports the SOURCE format. See Rest API docs for details')
         # log notebooks and libraries
         ws_c.import_current_workspace_items()
         end = timer()
@@ -111,9 +119,18 @@ def main():
         start = timer()
         hive_c = HiveClient(client_config)
         # log job configs
-        hive_c.import_hive_metastore(cluster_name=args.cluster_name, has_unicode=args.metastore_unicode)
+        hive_c.import_hive_metastore(cluster_name=args.cluster_name, has_unicode=args.metastore_unicode,
+                                     should_repair_table=args.repair_metastore_tables)
         end = timer()
         print("Complete Metastore Import Time: " + str(timedelta(seconds=end - start)))
+
+    if args.repair_metastore_tables:
+        print("Repairing metastore table")
+        start = timer()
+        hive_c = HiveClient(client_config)
+        hive_c.repair_legacy_tables(cluster_name=args.cluster_name)
+        end = timer()
+        print("Complete Metastore Repair Time: " + str(timedelta(seconds=end - start)))
 
     if args.table_acls:
         print("Importing table acls configs at {0}".format(now))
@@ -178,6 +195,10 @@ def main():
         ws_c = WorkspaceClient(client_config)
         start = timer()
         # log notebooks and libraries
+        if ws_c.is_overwrite_notebooks():
+            # if OVERWRITE is configured, check that the SOURCE format option is used. Otherwise fail
+            if not ws_c.is_source_file_format():
+                raise ValueError('Overwrite notebooks only supports the SOURCE format. See Rest API docs for details')
         ws_c.import_user_home(username, 'user_exports')
         end = timer()
         print("Complete Single User Import Time: " + str(timedelta(seconds=end - start)))
@@ -190,6 +211,10 @@ def main():
         user_names = scim_c.get_users_from_log()
         print('Export users notebooks:', user_names)
         ws_c = WorkspaceClient(client_config)
+        if ws_c.is_overwrite_notebooks():
+            # if OVERWRITE is configured, check that the SOURCE format option is used. Otherwise fail
+            if not ws_c.is_source_file_format():
+                raise ValueError('Overwrite notebooks only supports the SOURCE format. See Rest API docs for details')
         for username in user_names:
             ws_c.import_user_home(username, 'user_exports')
         jobs_c = JobsClient(client_config)
@@ -210,7 +235,7 @@ def main():
         start = timer()
         hive_c = HiveClient(client_config)
         # log job configs
-        hive_c.report_legacy_tables_to_fix()
+        hive_c.repair_legacy_tables()
         end = timer()
         print("Complete Report Time: " + str(timedelta(seconds=end - start)))
 

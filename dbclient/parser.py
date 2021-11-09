@@ -226,6 +226,9 @@ def get_import_parser():
     parser.add_argument('--workspace-acls', action='store_true',
                         help='Permissions for workspace objects to import')
 
+    parser.add_argument('--overwrite-notebooks', action='store_true', default=False,
+                        help='Flag to overwrite notebooks to forcefully overwrite during notebook imports')
+
     parser.add_argument('--notebook-format', type=NotebookFormat,
                         choices=list(NotebookFormat), default=NotebookFormat.dbc,
                         help='Choose the file format of the notebook to import (default: DBC)')
@@ -266,6 +269,9 @@ def get_import_parser():
 
     parser.add_argument('--get-repair-log', action='store_true',
                         help='Report on current tables requiring repairs')
+
+    parser.add_argument('--repair-metastore-tables', action='store_true', default=False,
+                        help='Repair legacy metastore tables')
 
     # cluster name used to import the metastore
     parser.add_argument('--cluster-name', action='store',
@@ -351,6 +357,11 @@ def build_client_config(url, token, args):
               'debug': args.debug,
               'file_format': str(args.notebook_format)
               }
+    # this option only exists during imports so we check for existence
+    if 'overwrite_notebooks' in args:
+        config['overwrite_notebooks'] = args.overwrite_notebooks
+    else:
+        config['overwrite_notebooks'] = False
     if args.set_export_dir:
         if args.set_export_dir.rstrip()[-1] != '/':
             config['export_dir'] = args.set_export_dir + '/'
@@ -361,3 +372,44 @@ def build_client_config(url, token, args):
     else:
         config['export_dir'] = 'azure_logs/'
     return config
+
+
+def get_pipeline_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description='Export user(s) workspace artifacts from Databricks')
+
+    parser.add_argument('--profile', action='store', default='DEFAULT',
+                        help='Profile to parse the credentials')
+
+    parser.add_argument('--azure', action='store_true', default=False,
+                        help='Run on Azure. (Default is AWS)')
+
+    parser.add_argument('--silent', action='store_true', default=False,
+                        help='Silent all logging of export operations.')
+
+    parser.add_argument('--no-ssl-verification', action='store_true',
+                        help='Set Verify=False when making http requests.')
+
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug logging')
+
+    parser.add_argument('--set-export-dir', action='store',
+                        help='Set the base directory to export artifacts')
+
+    parser.add_argument('--notebook-format', type=NotebookFormat,
+                        choices=list(NotebookFormat), default=NotebookFormat.dbc,
+                        help='Choose the file format to download the notebooks (default: DBC)')
+
+    parser.add_argument('--overwrite-notebooks', action='store_true', default=False,
+                        help='Flag to overwrite notebooks to forcefully overwrite during notebook imports')
+
+    parser.add_argument('--skip-failed', action='store_true', default=False,
+                        help='Skip retries for any failed hive metastore exports.')
+
+    parser.add_argument('--session', action='store', default='',
+                        help='If set, pipeline resumes from latest checkpoint of given session; '
+                             'Otherwise, pipeline starts from beginning and creates a new session.')
+
+    parser.add_argument('--dry-run', action='store_true', default=False,
+                        help='Dry run the pipeline i.e. will not execute tasks if true.')
+
+    return parser
